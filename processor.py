@@ -8,6 +8,7 @@ import hashlib
 import os
 import shutil
 import argparse
+import sys
 
 import pandas as pd
 from functools import cached_property
@@ -15,7 +16,7 @@ from functools import cached_property
 
 def main():
     args = get_args()
-    p = Processor(**get_args())
+    p = Processor(**args)
     if not args['rank_only']:
         p.init_files()
         p.generate_and_run_bat()
@@ -99,7 +100,7 @@ class Processor:
                 target_filename = '-'.join(self._get_student_info(path)) + '.cpp'
                 shutil.copy(full_path, os.path.join(self.folders['source'], target_filename))
             else:
-                self._set_wrong_filetype(*os.path.splitext(full_path))
+                self._set_wrong_filetype(*os.path.splitext(path))
 
     def update_results(self):
         cpp_files = set(file.split(".cpp")[0] for file in os.listdir(self.folders["source"]))
@@ -111,8 +112,8 @@ class Processor:
             with open(os.path.join(self.folders["output"], filename + ".txt"), "r") as f:
                 output = f.read().strip()
             # check whether the required output contents are in the output file
-            if self.correct_answer[-1] not in output:
-                # if any(required_line not in output for required_line in self.correct_answer):
+            # if self.correct_answer[-1] not in output:
+            if any(required_line.strip() not in output for required_line in self.correct_answer):
                 wrong_answer_filenames.add(filename)
         results = {
             "CompileError": cpp_files - exe_files,  # 如果有cpp，没有exe，标记为编译失败
@@ -198,15 +199,17 @@ class Processor:
             with open(self.answer_file, "r") as f:
                 return f.readlines()
         except FileNotFoundError:
-            correct_answer = input("请输入正确答案：")
-            with open(os.path.join(self.answer_file), "w") as f:
-                f.write(correct_answer)
-            return [correct_answer]
-            # print("请在下方输入正确答案（按Ctrl+D或Ctrl+Z结束输入）：")
-            # correct_answer = sys.stdin.readlines()
-            # with open(self.answer_file, "w") as f:
-            #     f.writelines(correct_answer)
-            # return correct_answer
+            # correct_answer = input("请输入正确答案：")
+            # with open(os.path.join(self.answer_file), "w") as f:
+            #     f.write(correct_answer)
+            # return [correct_answer]
+            print("请在下方输入正确答案（按Ctrl+D或Ctrl+Z结束输入）：")
+            correct_answer = sys.stdin.readlines()
+            # remove empty lines
+            correct_answer = [line for line in correct_answer if line.strip()]
+            with open(self.answer_file, "w") as f:
+                f.writelines(correct_answer)
+            return correct_answer
 
     @cached_property
     def submission_df(self):
@@ -245,9 +248,11 @@ def get_args() -> dict:
     parser.add_argument('-t', '--allow_wrong_filetype', action='store_true', help='Allow wrong filetype')
     parser.add_argument('-a', '--allow_incorrect_answer', action='store_true', help='Allow incorrect answer')
     parser.add_argument('-r', '--rank_only', action='store_true', help='Only update ranks')
-    project = parser.parse_args().project
-    assert os.path.exists(os.path.join("collections", project)), "Invalid project name"
-    return vars(parser.parse_args())
+    args = vars(parser.parse_args())
+    if args.get('project') is None:
+        args['project'] = input("Please input the project name: ")
+    assert os.path.exists(os.path.join("collections", args['project'])), "Invalid project name"
+    return args
 
 
 if __name__ == '__main__':
