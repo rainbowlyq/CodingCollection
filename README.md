@@ -36,3 +36,8 @@ python processor.py code
 ### Recommended Workflow
 
 先完整运行代码，根据`result.csv`中的判定结果进行检查和修改，然后通过`-r`命令重新更新排名
+
+## Todo List
+
+- [ ] 使用python并行编译运行cpp代码，记录相关信息
+- [ ] 打印仅结果错误的输出/代码，人工判断是否正确

@@ -1,7 +1,6 @@
+.idea/
 run.bat
-test/
 Code*/
 Assignment*/
-.idea/
 answers/
-results.xlsx
+*.log

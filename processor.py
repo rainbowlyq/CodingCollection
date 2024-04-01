@@ -4,18 +4,24 @@
 @Time    : 2024/3/8 14:32
 @Author  : lyq
 """
+import argparse
 import hashlib
+import logging
 import os
 import shutil
-import argparse
 import sys
+from functools import cached_property
 
 import pandas as pd
-from functools import cached_property
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[logging.StreamHandler(sys.stderr), logging.FileHandler('console.log')])
+logger = logging.getLogger(__name__)
 
 
 def main():
     args = get_args()
+    logger.info(f"Processing project: {args['project']}")
     p = Processor(**args)
     if not args['rank_only']:
         p.init_files()
@@ -150,14 +156,14 @@ class Processor:
             self.md5_dict[md5] = info
         else:
             other = self.md5_dict[md5]
-            print(f"Identical submissions: {info} with {other}")
+            logger.warning(f"Identical submissions: {info} with {other}")
             if not self.config['allow_identical_submission']:
                 res_col = f"{self.project}_result"
                 self.result_df.loc[self._get_student_info(info)[0], res_col] = "IdenticalSubmission"
                 self.result_df.loc[self._get_student_info(other)[0], res_col] = "IdenticalSubmission"
 
     def _set_wrong_filetype(self, filename, ext):
-        print(f"Wrong filetype: {filename}{ext}")
+        logger.warning(f"Wrong filetype: {filename}{ext}")
         if not self.config['allow_wrong_filetype']:
             student_id, name = self._get_student_info(filename)
             self.result_df.loc[student_id, f"{self.project}_result"] = "WrongFileType"
@@ -180,10 +186,10 @@ class Processor:
         if validate:
             true_name = self.result_df.loc[student_id, '姓名']
             if true_name == '':
-                print("Warning: 学号不存在", student_id, name)
+                logger.warning(f"学号不存在, {student_id}, {name}")
                 self.result_df.loc[student_id, '姓名'] = name
             elif true_name != name:
-                print("Warning: 姓名-学号不匹配", filename, true_name)
+                logger.warning(f"姓名-学号不匹配, {filename}, {true_name}")
                 return student_id, true_name
         return student_id, name
 
@@ -203,7 +209,7 @@ class Processor:
             # with open(os.path.join(self.answer_file), "w") as f:
             #     f.write(correct_answer)
             # return [correct_answer]
-            print("请在下方输入正确答案（按Ctrl+D或Ctrl+Z结束输入）：")
+            print("请在下方输入正确答案（按Ctrl+D结束输入）：")
             correct_answer = sys.stdin.readlines()
             # remove empty lines
             correct_answer = [line for line in correct_answer if line.strip()]
