@@ -3,13 +3,11 @@
 @File    : processor.py
 @Time    : 2024/3/8 14:32
 @Author  : lyq
-@Description : 
 """
 import hashlib
 import os
 import shutil
 import argparse
-import sys
 
 import pandas as pd
 from functools import cached_property
@@ -32,12 +30,13 @@ class Processor:
             "base": os.path.join(".", project),
             "dll": os.path.join(".", "dll"),
             "original": os.path.join(".", "collections", project),
-            'answer': os.path.join(".", "answers", project + ".txt"),
+            'answers': os.path.join(".", "answers"),
             'collection': os.path.join(".", project, 'collection'),
             'source': os.path.join(".", project, 'source'),
             'bin': os.path.join(".", project, 'bin'),
             'output': os.path.join(".", project, 'output')
         }
+        self.answer_file = os.path.join(self.folders['answers'], project + ".txt")
         self.md5_dict = {}
         supported_configs = ["allow_identical_submission", "allow_wrong_filetype", "allow_incorrect_answer"]
         self.config = {config_name: kwargs.get(config_name, False) for config_name in supported_configs}
@@ -196,18 +195,18 @@ class Processor:
     @cached_property
     def correct_answer(self) -> list[str]:
         try:
-            with open(os.path.join(self.folders['answer']), "r") as f:
+            with open(self.answer_file, "r") as f:
                 return f.readlines()
         except FileNotFoundError:
-            # correct_answer = input("请输入正确答案：")
-            # with open(os.path.join(self.folders['answer']), "w") as f:
-            #     f.write(correct_answer)
-            # return [correct_answer]
-            print("请在下方输入正确答案（按Ctrl+D或Ctrl+Z结束输入）：")
-            correct_answer = sys.stdin.readlines()
-            with open(os.path.join(self.folders['answer']), "w") as f:
-                f.writelines(correct_answer)
-            return correct_answer
+            correct_answer = input("请输入正确答案：")
+            with open(os.path.join(self.answer_file), "w") as f:
+                f.write(correct_answer)
+            return [correct_answer]
+            # print("请在下方输入正确答案（按Ctrl+D或Ctrl+Z结束输入）：")
+            # correct_answer = sys.stdin.readlines()
+            # with open(self.answer_file, "w") as f:
+            #     f.writelines(correct_answer)
+            # return correct_answer
 
     @cached_property
     def submission_df(self):
