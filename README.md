@@ -32,6 +32,7 @@ python processor.py code
 - `-t` or `--allow_wrong_filetype`: 将错误文件名计为编译错误
 - `-a` or `--allow_incorrect_answer`: 将错误输出计入排名
 - `-r` or `--rank_only`: 只更新排名
+- `-u` or `--update_answer`: 重新评阅答案并更新排名
 
 ### Recommended Workflow
 
@@ -39,5 +40,6 @@ python processor.py code
 
 ## Todo List
 
+- [x] 增加仅重新评阅答案功能
 - [ ] 使用python并行编译运行cpp代码，记录相关信息
 - [ ] 打印仅结果错误的输出/代码，人工判断是否正确

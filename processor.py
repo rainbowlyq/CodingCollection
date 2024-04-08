@@ -26,6 +26,7 @@ def main():
     if not args['rank_only']:
         p.init_files()
         p.generate_and_run_bat()
+    if args['update_answer']:
         p.update_results()
     p.update_ranks()
 
@@ -50,6 +51,7 @@ class Processor:
         self.result_df = self._read_result()
 
     def generate_and_run_bat(self):
+        logger.info("Generating and running bat file")
         with open("run_template.bat", "r", encoding='utf-8') as template:
             lines = template.readlines()
         edited_lines = []
@@ -109,6 +111,9 @@ class Processor:
                 self._set_wrong_filetype(*os.path.splitext(path))
 
     def update_results(self):
+        logger.info("Updating results")
+        if f"{self.project}_result" in self.result_df.columns:
+            self.result_df.drop(columns=[f"{self.project}_result"], inplace=True)
         cpp_files = set(file.split(".cpp")[0] for file in os.listdir(self.folders["source"]))
         exe_files = set(file.split(".exe")[0] for file in os.listdir(self.folders["bin"]))
         txt_files = set(file.split(".txt")[0] for file in os.listdir(self.folders["output"]))
@@ -139,11 +144,14 @@ class Processor:
         # self.result_df.to_excel("results.xlsx")
 
     def update_ranks(self):
-        rank_candidates_mask = self.result_df[f"{self.project}_result"].isna()
+        ranked_mask = ~pd.to_numeric(self.result_df[f"{self.project}_result"], errors='coerce').isna()
+        empty_mask = self.result_df[f"{self.project}_result"].isna()
+        rank_candidates_mask = (empty_mask | ranked_mask)
         rank = self.result_df[f"{self.project}_submission"][rank_candidates_mask].rank().astype(int)
         self.result_df.loc[rank_candidates_mask, f"{self.project}_result"] = rank
         self.result_df.to_csv("results.csv")
         # self.result_df.to_excel("results.xlsx")
+        logger.info(f"Ranks updated, {len(rank)} students are ranked. ")
 
     def _get_latest_filename(self, dir_path):
         student_id, name = self._get_student_info(dir_path)
@@ -184,13 +192,26 @@ class Processor:
         filename, ext = os.path.splitext(file)
         student_id, name = filename.split('-')
         if validate:
-            true_name = self.result_df.loc[student_id, '姓名']
-            if true_name == '':
-                logger.warning(f"学号不存在, {student_id}, {name}")
-                self.result_df.loc[student_id, '姓名'] = name
-            elif true_name != name:
-                logger.warning(f"姓名-学号不匹配, {filename}, {true_name}")
-                return student_id, true_name
+            if student_id in self.result_df.index:
+                true_name = self.result_df.loc[student_id, '姓名']
+                if true_name != name:
+                    logger.warning(f"姓名-学号不匹配, {filename}, {true_name}, {name}")
+                    self.submission_df.loc[student_id, 'name'] = true_name
+                    self.submission_df.to_csv(os.path.join(self.folders['base'], "submission.csv"))
+                    name = true_name
+            else:
+                if name in self.result_df['姓名'].values:
+                    logger.warning(f"学号错误, {name}, {student_id}")
+                    student_id = self.result_df[self.result_df['姓名'] == name].index[0]
+                    df = self.submission_df[self.submission_df['name'] == name].sort_values("submit_time")
+                    if len(df) > 1:
+                        # keep the latest submission
+                        self.submission_df.drop(df.iloc[:-1].index, inplace=True)
+                    self.submission_df.loc[self.submission_df['name'] == name, 'student_id'] = student_id
+                    self.submission_df.to_csv(os.path.join(self.folders['base'], "submission.csv"))
+                else:
+                    logger.warning(f"学号姓名不存在, {student_id}, {name}")
+                    self.result_df.loc[student_id, '姓名'] = name
         return student_id, name
 
     def _read_result(self):
@@ -240,6 +261,7 @@ def remove_pause(source_filepath):
     edited_lines = []
     for line in lines:
         line = line.replace('system("pause");', '')
+        line = line.replace('system ("pause");', '')
         line = line.replace('getchar()', '')
         edited_lines.append(line)
     with open(source_filepath, "w", encoding='utf-8') as source:
@@ -254,6 +276,7 @@ def get_args() -> dict:
     parser.add_argument('-t', '--allow_wrong_filetype', action='store_true', help='Allow wrong filetype')
     parser.add_argument('-a', '--allow_incorrect_answer', action='store_true', help='Allow incorrect answer')
     parser.add_argument('-r', '--rank_only', action='store_true', help='Only update ranks')
+    parser.add_argument('-u', '--update_answer', action='store_true', help='Update correct answer and ranks')
     args = vars(parser.parse_args())
     if args.get('project') is None:
         args['project'] = input("Please input the project name: ")
