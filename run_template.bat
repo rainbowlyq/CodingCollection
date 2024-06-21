@@ -32,20 +32,5 @@ for %%f in ("%SOURCE_FOLDER%\*.cpp") do (
     )
 )
 
-rem 遍历输出文件夹中的所有exe文件
-for %%f in ("%BIN_FOLDER%\*.exe") do (
-    rem 获取当前cpp文件的文件名（不含扩展名）
-    set "filename=%%~nf"
-    
-    rem 编译当前cpp文件成exe
-    !BIN_FOLDER!\!filename!.exe >!OUTPUT_FOLDER!\!filename!.txt
-
-    rem 检查编译是否成功，如果成功则打印消息，否则打印错误信息
-    if !errorlevel! equ 0 (
-        echo !filename!.exe 运行成功！
-    ) else (
-        echo !filename!.exe 运行失败！
-    )
-)
 
 endlocal

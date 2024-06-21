@@ -11,6 +11,8 @@ import os
 import shutil
 import sys
 from functools import cached_property
+import subprocess
+import threading
 
 import pandas as pd
 
@@ -26,7 +28,7 @@ def main():
     if not args['rank_only']:
         p.init_files()
         p.generate_and_run_bat()
-    if args['update_answer']:
+    if args['update_answer'] or not args['rank_only']:
         p.update_results()
     p.update_ranks()
 
@@ -67,7 +69,13 @@ class Processor:
         # 把dll文件夹中的所有文件移动到bin文件夹中
         for file in os.listdir(self.folders['dll']):
             shutil.copy(os.path.join(self.folders['dll'], file), self.folders["bin"])
+        # compile all files
         os.system(f"run.bat 1> {os.path.join(self.folders['base'], 'log.txt')} 2>&1")
+        # run all exe
+        for filename in os.listdir(self.folders["bin"]):
+            if filename.endswith(".exe"):
+                cmd = [f'{os.path.join(self.folders["bin"], filename)}']
+                run_with_timeout(cmd, os.path.join(self.folders["output"], filename.replace(".exe", ".txt")))
         # 删除bin文件夹中的所有dll文件
         for dll_file in os.listdir(self.folders["bin"]):
             if dll_file.endswith(".dll"):
@@ -121,10 +129,8 @@ class Processor:
         for filename in txt_files:
             # read output
             with open(os.path.join(self.folders["output"], filename + ".txt"), "r") as f:
-                output = f.read().strip()
-            # check whether the required output contents are in the output file
-            # if self.correct_answer[-1] not in output:
-            if any(required_line.strip() not in output for required_line in self.correct_answer):
+                output = f.read()
+            if not self.is_correct_answer(output):
                 wrong_answer_filenames.add(filename)
         results = {
             "CompileError": cpp_files - exe_files,  # 如果有cpp，没有exe，标记为编译失败
@@ -141,7 +147,25 @@ class Processor:
                 self.result_df.loc[student_id, result_col] = error_type
         self.result_df.loc[self.result_df[submission_col].isna(), result_col] = "NoSubmission"
         self.result_df.to_csv("results.csv")
-        # self.result_df.to_excel("results.xlsx")
+        self.result_df.to_excel("results.xlsx")
+
+    def is_correct_answer(self, output) -> bool:
+        # check whether the required output contents are in the output file
+        output = output.strip().lower()
+        # return self.correct_answer[-1] not in output:
+        required_lines = [line.strip() for line in self.correct_answer if not line.startswith('[')]
+        required_true = all(required_line in output for required_line in required_lines)
+
+        optional_lines = [line.strip() for line in self.correct_answer if line.startswith('[')]
+        optional_groups = [line.split(']')[0] for line in optional_lines]
+        optional_true = len(optional_lines) == 0
+        for group in optional_groups:
+            optional_true = False
+            for line in [line for line in optional_lines if line.startswith(group)]:
+                if line.split(']')[1] in output.replace('\n', ' '):
+                    optional_true = True
+                    break
+        return required_true and optional_true
 
     def update_ranks(self):
         ranked_mask = ~pd.to_numeric(self.result_df[f"{self.project}_result"], errors='coerce').isna()
@@ -150,7 +174,7 @@ class Processor:
         rank = self.result_df[f"{self.project}_submission"][rank_candidates_mask].rank().astype(int)
         self.result_df.loc[rank_candidates_mask, f"{self.project}_result"] = rank
         self.result_df.to_csv("results.csv")
-        # self.result_df.to_excel("results.xlsx")
+        self.result_df.to_excel("results.xlsx")
         logger.info(f"Ranks updated, {len(rank)} students are ranked. ")
 
     def _get_latest_filename(self, dir_path):
@@ -177,12 +201,12 @@ class Processor:
             self.result_df.loc[student_id, f"{self.project}_result"] = "WrongFileType"
 
     def _process_submission(self, filepath):
-        submission = pd.read_excel(filepath, sheet_name='提交清单', dtype={'学号': str})
+        submission = pd.read_excel(filepath, sheet_name='提交清单', dtype={'学号': str},
+                                   usecols=['姓名', '学号', '文件名', '提交时间'])
         submission.rename(
             columns={'姓名': 'name', '学号': 'student_id', '文件名': 'filename', '提交时间': 'submit_time'},
             inplace=True)
         submission.drop_duplicates(subset=['name', 'student_id'], keep='first', inplace=True)
-        submission.drop(columns=['查看文件', '是否处理'], inplace=True)
         submission.set_index('student_id', inplace=True)
         submission.to_csv(os.path.join(self.folders['base'], "submission.csv"))
         return submission
@@ -207,7 +231,7 @@ class Processor:
                     if len(df) > 1:
                         # keep the latest submission
                         self.submission_df.drop(df.iloc[:-1].index, inplace=True)
-                    self.submission_df.loc[self.submission_df['name'] == name, 'student_id'] = student_id
+                    self.submission_df.loc[self.submission_df['name'] == name].index = [student_id]
                     self.submission_df.to_csv(os.path.join(self.folders['base'], "submission.csv"))
                 else:
                     logger.warning(f"学号姓名不存在, {student_id}, {name}")
@@ -216,8 +240,8 @@ class Processor:
 
     def _read_result(self):
         result_df = pd.read_csv("results.csv", index_col='学号', dtype={'学号': str, '序号': str, '年级': str})
-        result_df[f"{self.project}_submission"] = None
-        result_df[f"{self.project}_result"] = None
+        # result_df[f"{self.project}_submission"] = None
+        # result_df[f"{self.project}_result"] = None
         return result_df
 
     @cached_property
@@ -233,7 +257,7 @@ class Processor:
             print("请在下方输入正确答案（按Ctrl+D结束输入）：")
             correct_answer = sys.stdin.readlines()
             # remove empty lines
-            correct_answer = [line for line in correct_answer if line.strip()]
+            correct_answer = [line.lower() for line in correct_answer if line.strip()]
             with open(self.answer_file, "w") as f:
                 f.writelines(correct_answer)
             return correct_answer
@@ -259,11 +283,16 @@ def remove_pause(source_filepath):
         with open(source_filepath, "r", encoding='gbk') as source:
             lines = source.readlines()
     edited_lines = []
+    has_algorithm = False
     for line in lines:
+        if 'include' in line and 'algorithm' in line:
+            has_algorithm = True
         line = line.replace('system("pause");', '')
         line = line.replace('system ("pause");', '')
         line = line.replace('getchar()', '')
         edited_lines.append(line)
+    if not has_algorithm:
+        edited_lines = [edited_lines[0]] + ["#include<algorithm>\n"] + edited_lines[1:]
     with open(source_filepath, "w", encoding='utf-8') as source:
         source.writelines(edited_lines)
 
@@ -282,6 +311,36 @@ def get_args() -> dict:
         args['project'] = input("Please input the project name: ")
     assert os.path.exists(os.path.join("collections", args['project'])), "Invalid project name"
     return args
+
+
+def run_with_timeout(cmd: list[str], output_filepath, timeout_seconds=2):
+    # Open the output file
+    with open(output_filepath, 'w') as f:
+        # Start the subprocess
+        process = subprocess.Popen(cmd, stdout=f, stderr=subprocess.PIPE)
+
+        # Define a thread to wait for the process to complete
+        def target():
+            try:
+                process.communicate()
+            except subprocess.TimeoutExpired:
+                pass
+
+        # Start the thread
+        thread = threading.Thread(target=target)
+        thread.start()
+
+        # Wait for the timeout duration
+        thread.join(timeout_seconds)
+
+        # If the thread is still alive after the timeout, kill the process
+        if thread.is_alive():
+            process.kill()
+            f.write(f"Process {process.pid} is killed after {timeout_seconds} seconds timeout.\n")
+            thread.join()
+            return 2
+
+        return process.returncode
 
 
 if __name__ == '__main__':
